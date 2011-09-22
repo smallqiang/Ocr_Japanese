@@ -19,7 +19,8 @@
 
     viewController = [[OCRDemoViewController alloc] init];    
 
-    // Override point for customization after app launch    
+    // Override point for customization after app launch  
+    [viewController.view setFrame:[UIScreen mainScreen].applicationFrame];
     [window addSubview:viewController.view];
     [window makeKeyAndVisible];
 }

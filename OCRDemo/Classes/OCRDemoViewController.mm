@@ -7,12 +7,20 @@
 
 #import "OCRDemoViewController.h"
 #import "baseapi.h"
+#import "JSON.h"
 #include <math.h>
 static inline double radians (double degrees) {return degrees * M_PI/180;}
 
 @implementation OCRDemoViewController
 
-@synthesize iv,label;
+@synthesize iv,alert;
+@synthesize ocrTextView=_ocrTextView;
+@synthesize textView=_textView;
+@synthesize responseData=_responseData;
+
+@synthesize translateButton=_translateButton;
+
+@synthesize contentString=_contentString;
 
 // The designated initializer. Override to perform setup that is required before the view is loaded.
 - (id)initWithNibName:(NSString *)nibNameOrNil bundle:(NSBundle *)nibBundleOrNil {
@@ -32,17 +40,36 @@ static inline double radians (double degrees) {return degrees * M_PI/180;}
 
 - (void)viewDidLoad {
 	[super viewDidLoad];
-  [self startTesseract];
-	// Release any retained subviews of the main view.
-	// e.g. self.myOutlet = nil;
+    
+    [self startTesseract];
 }
 
-
 - (void)dealloc {
+    tess->End();
+    
+    [imagePickerController release];
+    imagePickerController=nil;
+    
 	[iv release];
 	iv = nil;
-	[label release];
-	label = nil;
+    
+    [alert release];
+    
+    [_ocrTextView release];
+    _ocrTextView=nil;
+    
+    [_textView release];
+    _textView=nil;
+    
+    [_responseData release];
+    _responseData=nil;
+    
+    [_translateButton release];
+    _translateButton=nil;
+    
+    [_contentString release];
+    _contentString=nil;
+    
     [super dealloc];
 
 }
@@ -52,19 +79,30 @@ static inline double radians (double degrees) {return degrees * M_PI/180;}
 #pragma mark IBAction
 - (IBAction) takePhoto:(id) sender
 {
-	imagePickerController = [[UIImagePickerController alloc] init];
-    imagePickerController.delegate = self;
-    imagePickerController.sourceType =  UIImagePickerControllerSourceTypeCamera;
-	
-	[self presentModalViewController:imagePickerController animated:YES];
+    [_ocrTextView resignFirstResponder];
+    if ([UIImagePickerController isSourceTypeAvailable:UIImagePickerControllerSourceTypeCamera])
+    {
+        imagePickerController = [[UIImagePickerController alloc] init];
+        imagePickerController.delegate = self;
+        imagePickerController.sourceType =  UIImagePickerControllerSourceTypeCamera;
+        [imagePickerController setAllowsEditing:YES];
+        
+        [self presentModalViewController:imagePickerController animated:YES];
+        
+        [imagePickerController release];
+    }
 }
 - (IBAction) findPhoto:(id) sender
-{
-	imagePickerController = [[UIImagePickerController alloc] init];
+{ 
+    [_ocrTextView resignFirstResponder];
+    imagePickerController = [[UIImagePickerController alloc] init];
     imagePickerController.delegate = self;
     imagePickerController.sourceType =  UIImagePickerControllerSourceTypePhotoLibrary;
+    [imagePickerController setAllowsEditing:YES];
 	
 	[self presentModalViewController:imagePickerController animated:YES];
+    
+    [imagePickerController release];
 }
 
 #pragma mark -
@@ -107,8 +145,6 @@ static inline double radians (double degrees) {return degrees * M_PI/180;}
 	tess->Init([dataPath cStringUsingEncoding:NSUTF8StringEncoding],    // Path to tessdata-no ending /.
                "jpn"                                                    // ISO 639-3 string or NULL.
                );
-	
-	
 }
 
 - (NSString *) ocrImage: (UIImage *) uiImage
@@ -156,42 +192,21 @@ static inline double radians (double degrees) {return degrees * M_PI/180;}
 	CGContextDrawImage(context, imageRect, image);
 	CGColorSpaceRelease( colorSpace );
 	void * buf = CGBitmapContextGetData (context);	
-	
-	NSDate *start = [NSDate date];
 
 	char* text = tess->TesseractRect((unsigned char*)buf, 4, bitmapBytesPerRow, 0, 0, width, height);
 	
-	NSDate *end = [NSDate date];
-	NSLog(@"%g", [end timeIntervalSinceDate:start]);
-	
 	free( buf );
-	
-	// Do something useful with the text!
-	NSLog(@"Converted text: %@",[NSString stringWithCString:text encoding:NSUTF8StringEncoding]);
-	
+    
+	if(text==nil)
+    {
+        return nil;
+    }
+    else
+    {
 	return [NSString stringWithCString:text encoding:NSUTF8StringEncoding];
-	// </MARCELO>
-	
-	/*
-	//code from http://robertcarlsen.net/2009/12/06/ocr-on-iphone-demo-1043	
-	CGSize imageSize = [uiImage size];
-	double bytes_per_line	= CGImageGetBytesPerRow([uiImage CGImage]);
-	double bytes_per_pixel	= CGImageGetBitsPerPixel([uiImage CGImage]) / 8.0;
-	
-	CFDataRef data = CGDataProviderCopyData(CGImageGetDataProvider([uiImage CGImage]));
-	const UInt8 *imageData = CFDataGetBytePtr(data);
-	
-	// this could take a while. maybe needs to happen asynchronously.
-	char* text = tess->TesseractRect(imageData,(int)bytes_per_pixel,(int)bytes_per_line, 0, 0,(int) imageSize.height,(int) imageSize.width);
-	
-	// Do something useful with the text!
-	NSLog(@"Converted text: %@",[NSString stringWithCString:text encoding:NSUTF8StringEncoding]);
-
-	return [NSString stringWithCString:text encoding:NSUTF8StringEncoding];*/
+    }
 }
 
-
-//http://www.iphonedevsdk.com/forum/iphone-sdk-development/7307-resizing-photo-new-uiimage.html#post33912
 -(UIImage *)resizeImage:(UIImage *)image {
 	
 	CGImageRef imageRef = [image CGImage];
@@ -251,12 +266,19 @@ static inline double radians (double degrees) {return degrees * M_PI/180;}
 {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
 	
-	NSString *text = [self ocrImage:image];
-	label.text = text;
+	NSString *textString = [self ocrImage:image];
 	
+    [self performSelectorOnMainThread:@selector(reloadTextView:) withObject:textString waitUntilDone:NO];
+    
 	[pool release];
 	
 	[alert dismissWithClickedButtonIndex:0 animated:YES];
+    [alert release];
+}
+
+-(void)reloadTextView:(NSString *)textString
+{
+    _ocrTextView.text=textString;
 }
 // </MARCELO>
 
@@ -266,24 +288,122 @@ static inline double radians (double degrees) {return degrees * M_PI/180;}
 		didFinishPickingImage:(UIImage *)image
 				  editingInfo:(NSDictionary *)editingInfo
 {
-	/*
-	// Dismiss the image selection, hide the picker and
-	//show the image view with the picked image	
-	[picker dismissModalViewControllerAnimated:YES];
-	UIImage *newImage = [self resizeImage:image];
-	iv.image = newImage;
-	NSString *text = [self ocrImage:newImage];
-	label.text = text;*/
-	
-	// <MARCELO>
-	alert = [[UIAlertView alloc] initWithTitle:@"OCRDemo" message:@"Working..." delegate:self cancelButtonTitle:nil otherButtonTitles:nil];
+    _ocrTextView.text=nil;
+    _textView.hidden=YES;
+    iv.hidden=NO;
+    
+    iv.image=image;
+    
+	alert = [[UIAlertView alloc] initWithTitle:nil message:@"识别中..." delegate:self cancelButtonTitle:nil otherButtonTitles:nil];
 	[alert show];
 	
-	[picker dismissModalViewControllerAnimated:YES];	
+	[picker dismissModalViewControllerAnimated:YES];
+	
 	[NSThread detachNewThreadSelector:@selector(doOCR:) toTarget:self withObject:image];
 	// </MARCELO>
-	
-	
+}
+
+-(IBAction)translate:(id)sender
+{
+    [_ocrTextView resignFirstResponder];
+    
+    if ([_ocrTextView.text length]==0) {
+        alert = [[UIAlertView alloc] initWithTitle:nil message:@"请输入翻译内容！" delegate:self cancelButtonTitle:@"确定" otherButtonTitles:nil];
+        [alert show];
+    }
+    else
+    {
+    _textView.text=nil;
+    _textView.hidden=NO;
+    iv.hidden=YES;    
+        
+    alert = [[UIAlertView alloc] initWithTitle:nil message:@"翻译中..." delegate:self cancelButtonTitle:nil otherButtonTitles:nil];
+    [alert show];    
+    
+    [self performTranslation];
+    }
+}
+
+-(void)performTranslation
+{
+    _responseData = [[NSMutableData data] retain];
+    
+    NSString *langString = @"ja|zh-CN";
+    
+    NSString *textString=_ocrTextView.text;
+    
+    NSArray *array=[textString componentsSeparatedByString:@"\n"];
+    
+    _contentString=[[NSString alloc]init];
+    
+    for (int i=0; i<[array count]; i++) {
+        if ([[array objectAtIndex:i] length]!=0) {
+            _contentString=[_contentString stringByAppendingString:[NSString stringWithFormat:@"&q=%@",[array objectAtIndex:i]]];
+        }
+    }
+    
+    NSString *langtextString = [_contentString stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
+    
+    NSString *langStringEscaped = [langString stringByAddingPercentEscapesUsingEncoding:NSUTF8StringEncoding];
+    
+    NSString *url =[NSString stringWithFormat:@"http://ajax.googleapis.com/ajax/services/language/translate?v=1.0%@&langpair=%@",langtextString,langStringEscaped];
+    
+    //NSString *url=[NSString stringWithFormat:@"https://www.googleapis.com/language/translate/v2?source=ja&target=zh-CN&q=%@",langtextString];
+    
+    NSURLRequest *request = [NSURLRequest requestWithURL:[NSURL URLWithString:url]];
+    [[NSURLConnection alloc] initWithRequest:request delegate:self];
+
+}
+
+- (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response {
+     [_responseData setLength:0];
+}
+
+- (void)connection:(NSURLConnection *)connection didReceiveData:(NSData *)data {
+    [_responseData appendData:data];
+}
+
+- (void)connection:(NSURLConnection *)connection didFailWithError:(NSError *)error {
+    
+}
+
+- (void)connectionDidFinishLoading:(NSURLConnection *)connection {
+    [connection release];
+    
+    NSString *responseString = [[NSString alloc] initWithData:_responseData encoding:NSUTF8StringEncoding];
+    
+    [_responseData release];
+    
+    NSMutableDictionary *luckyNumbers = [responseString JSONValue];
+    [responseString release];
+    if (luckyNumbers != nil) {
+        
+        NSDecimalNumber * responseStatus = [luckyNumbers objectForKey:@"responseStatus"];
+        if ([responseStatus intValue] != 200) {
+            return;
+        }
+        
+        NSMutableArray *responseDataArray = (NSMutableArray *)[luckyNumbers objectForKey:@"responseData"];
+        if (responseDataArray != nil) {
+            NSString *stringText=[[NSString alloc]init];
+            
+            if ([responseDataArray count]==1) {
+                NSString *translatedText = [(NSDictionary *)responseDataArray objectForKey:@"translatedText"];
+                _textView.text=translatedText;
+            }
+            
+            else
+            {
+            for (int i=0; i<[responseDataArray count]; i++) {
+                stringText=[stringText stringByAppendingFormat:@"%@\n",[[(NSDictionary *)[responseDataArray objectAtIndex:i] objectForKey:@"responseData"] objectForKey:@"translatedText"]];
+            }
+            _textView.text=stringText;
+            }
+        }
+    }
+    
+    [alert dismissWithClickedButtonIndex:0 animated:YES];
+    [alert release];
 }
 
 @end

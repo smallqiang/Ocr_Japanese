@@ -10,19 +10,39 @@
 #import "baseapi.h"
 
 @interface OCRDemoViewController : UIViewController <UIImagePickerControllerDelegate, UINavigationControllerDelegate>{
-	UIImagePickerController *imagePickerController;
+	//UIImagePickerController *imagePickerController;
     tesseract::TessBaseAPI *tess;
 	UIImageView *iv;
-	UILabel *label;
 	UIAlertView *alert;
+    
+    UITextView *_ocrTextView;
+    UITextView *_textView;
+    
+    UIButton *_translateButton;
 
+    NSMutableData *_responseData;
+    
+    NSString *_contentString;
+    
+    UIImagePickerController *imagePickerController;
 }
 @property (nonatomic, retain) IBOutlet UIImageView *iv;
-@property (nonatomic, retain) IBOutlet UILabel *label;
+@property (nonatomic, retain) UIAlertView *alert;
 
+@property (nonatomic, retain) IBOutlet UITextView *ocrTextView;
+@property (nonatomic, retain) IBOutlet UITextView *textView;
+
+@property (nonatomic, retain) NSMutableData *responseData;
+
+@property (nonatomic, retain) IBOutlet UIButton *translateButton;
+
+@property (nonatomic, retain) NSString *contentString;
 
 - (IBAction) findPhoto:(id) sender;
 - (IBAction) takePhoto:(id) sender;
+
+-(IBAction)translate:(id)sender;
+-(IBAction)performTranslation;
 
 - (void) startTesseract;
 - (NSString *) applicationDocumentsDirectory;
